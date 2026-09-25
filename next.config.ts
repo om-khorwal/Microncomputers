@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    serverActions: {
+      // Sheet imports are sent as JSON in the action body; default 1MB is tight for a large catalog.
+      bodySizeLimit: "4mb",
+    },
+  },
 };
 
 export default nextConfig;

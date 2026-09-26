@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { parseSheetFile, type ParseResult } from "@/lib/import/parse";
-import { importProducts, type ImportResult } from "@/app/admin/import/actions";
+import { importProducts } from "@/app/admin/import/actions";
+import type { ImportResult } from "@/lib/import/save";
 
 export function ImportUploader() {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
@@ -34,9 +35,13 @@ export function ImportUploader() {
 
   const validRows = parsed?.rows.filter((r) => r.issues.length === 0) ?? [];
   const invalidRows = parsed?.rows.filter((r) => r.issues.length > 0) ?? [];
-  const unmappedFields = parsed
-    ? (Object.entries(parsed.mapping) as [string, string | null][]).filter(([, v]) => v === null)
-    : [];
+  const missingRequired = parsed?.missingRequired ?? [];
+
+  // Optional columns the sheet has (family, processor, RAM...), to show in the preview.
+  const hasFamilyColumn = Boolean(parsed?.mapping.family);
+  const hasConfigColumns = Boolean(
+    parsed && (parsed.mapping.processor || parsed.mapping.ram || parsed.mapping.storage || parsed.mapping.graphics)
+  );
 
   return (
     <div className="space-y-6">
@@ -53,16 +58,20 @@ export function ImportUploader() {
         <p className="mt-2 text-xs text-muted">
           Expected columns: Model Number, Configuration / Product Name, Quantity, Selling Price (or After GST).
         </p>
+        <p className="mt-1 text-xs text-muted">
+          Optional: Family (rows with the same family become options of one product), Brand, Processor, RAM, Storage,
+          Graphics.
+        </p>
       </div>
 
       {parseError && <p className="text-sm text-red-600">{parseError}</p>}
 
       {parsed && (
         <div>
-          {unmappedFields.length > 0 && (
+          {missingRequired.length > 0 && (
             <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Couldn&apos;t find a column for: {unmappedFields.map(([f]) => f.replace("_", " ")).join(", ")}. Rows are
-              missing that data until the sheet includes it.
+              Couldn&apos;t find a column for: {missingRequired.join(", ")}. Rows are missing that data until the
+              sheet includes it.
             </div>
           )}
 
@@ -78,7 +87,7 @@ export function ImportUploader() {
               disabled={publishing || validRows.length === 0}
               className="rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark disabled:opacity-50"
             >
-              {publishing ? "Publishing…" : `Publish ${validRows.length} Products`}
+              {publishing ? "Publishing…" : `Publish ${validRows.length} Rows`}
             </button>
           </div>
 
@@ -89,6 +98,8 @@ export function ImportUploader() {
                   <th className="px-3 py-2">Row</th>
                   <th className="px-3 py-2">Model Number</th>
                   <th className="px-3 py-2">Name</th>
+                  {hasFamilyColumn && <th className="px-3 py-2">Family</th>}
+                  {hasConfigColumns && <th className="px-3 py-2">Configuration</th>}
                   <th className="px-3 py-2">Qty</th>
                   <th className="px-3 py-2">Price</th>
                   <th className="px-3 py-2">Status</th>
@@ -100,6 +111,12 @@ export function ImportUploader() {
                     <td className="px-3 py-2 text-xs text-muted">{row.rowNumber}</td>
                     <td className="px-3 py-2">{row.model_number || "—"}</td>
                     <td className="px-3 py-2">{row.name || "—"}</td>
+                    {hasFamilyColumn && <td className="px-3 py-2">{row.family || "—"}</td>}
+                    {hasConfigColumns && (
+                      <td className="px-3 py-2 text-xs">
+                        {[row.processor, row.ram, row.storage, row.graphics].filter(Boolean).join(" · ") || "—"}
+                      </td>
+                    )}
                     <td className="px-3 py-2">{row.quantity}</td>
                     <td className="px-3 py-2">{row.price}</td>
                     <td className="px-3 py-2 text-xs">
@@ -120,10 +137,14 @@ export function ImportUploader() {
       {result && (
         <div className="rounded-lg border border-border bg-white p-5">
           <h3 className="text-sm font-semibold text-navy">Import Result</h3>
-          <div className="mt-3 grid grid-cols-3 gap-4 text-center">
+          <div className="mt-3 grid grid-cols-2 gap-4 text-center sm:grid-cols-4">
             <div>
-              <div className="text-xl font-bold text-green-700">{result.created}</div>
-              <div className="text-xs text-muted">Created</div>
+              <div className="text-xl font-bold text-green-700">{result.createdProducts}</div>
+              <div className="text-xs text-muted">New Products</div>
+            </div>
+            <div>
+              <div className="text-xl font-bold text-green-700">{result.createdVariants}</div>
+              <div className="text-xs text-muted">New Variants</div>
             </div>
             <div>
               <div className="text-xl font-bold text-accent">{result.updated}</div>

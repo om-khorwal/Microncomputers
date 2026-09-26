@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/supabase";
-import type { Product } from "@/lib/types";
+import type { ProductWithVariants } from "@/lib/types";
+import { latestStockUpdate } from "@/lib/variants";
 
 export type ProductFilters = {
   q?: string;
@@ -9,57 +10,92 @@ export type ProductFilters = {
 };
 
 
-// Get all products + optional filters
-export async function getProducts(
-  filters: ProductFilters = {}
-): Promise<Product[]> {
+// Get every visible product family, with all of its variants.
+// Newest stock update first.
+//
+// The catalogue is small (a few hundred laptops), so we load it once and
+// filter in code below. That is much simpler than one big database query that
+// searches families and variants at the same time.
+async function getAllFamilies(): Promise<ProductWithVariants[]> {
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("products")
-    .select("*")
-    .order("updated_at", { ascending: false });
-
-  // Search
-  if (filters.q) {
-    query = query.or(
-      `name.ilike.%${filters.q}%,model_number.ilike.%${filters.q}%,brand.ilike.%${filters.q}%`
-    );
-  }
-
-  // Category filter
-  if (filters.category) {
-    query = query.eq("category", filters.category);
-  }
-
-  // Brand filter
-  if (filters.brand) {
-    query = query.eq("brand", filters.brand);
-  }
-
-  // Only products with stock
-  if (filters.inStockOnly) {
-    query = query.gt("quantity", 0);
-  }
-
-  const { data, error } = await query;
+    .select("*, product_variants(*)")
+    .eq("is_archived", false);
 
   if (error) {
     console.log("Products error:", error);
     return [];
   }
 
-  return data ?? [];
+  // A family with no variants has nothing to sell yet, so we hide it.
+  const families = (data ?? []).filter(
+    (family) => family.product_variants.length > 0
+  ) as ProductWithVariants[];
+
+  families.sort((first, second) =>
+    latestStockUpdate(second).localeCompare(latestStockUpdate(first))
+  );
+
+  return families;
 }
 
 
-// Get one product
+// Get all product families + optional filters
+export async function getProducts(
+  filters: ProductFilters = {}
+): Promise<ProductWithVariants[]> {
+
+  const families = await getAllFamilies();
+  const searchText = (filters.q ?? "").trim().toLowerCase();
+
+  return families.filter((family) => {
+
+    // Search: family name, brand, or any variant's exact model number
+    if (searchText) {
+      const nameMatches = family.name.toLowerCase().includes(searchText);
+      const brandMatches = (family.brand ?? "").toLowerCase().includes(searchText);
+      const skuMatches = family.product_variants.some((variant) =>
+        variant.sku.toLowerCase().includes(searchText)
+      );
+
+      if (!nameMatches && !brandMatches && !skuMatches) {
+        return false;
+      }
+    }
+
+    // Category filter
+    if (filters.category && family.category !== filters.category) {
+      return false;
+    }
+
+    // Brand filter
+    if (filters.brand && family.brand !== filters.brand) {
+      return false;
+    }
+
+    // Only families with at least one variant in stock
+    if (filters.inStockOnly) {
+      const anyInStock = family.product_variants.some((variant) => variant.quantity > 0);
+
+      if (!anyInStock) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+
+// Get one product family (with its variants)
 export async function getProductById(
   id: string
-): Promise<Product | null> {
+): Promise<ProductWithVariants | null> {
 
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select("*, product_variants(*)")
     .eq("id", id)
     .maybeSingle();
 
@@ -68,27 +104,43 @@ export async function getProductById(
     return null;
   }
 
-  return data ?? null;
+  if (!data || data.product_variants.length === 0) {
+    return null;
+  }
+
+  return data as ProductWithVariants;
 }
 
 
-// Get latest products
-export async function getFeaturedProducts(
-  limit = 5
-): Promise<Product[]> {
+// Old links point at a variant's id (before the family/variant split, every
+// model number had its own page). Returns that variant's family id, if any.
+export async function getFamilyIdForVariant(
+  variantId: string
+): Promise<string | null> {
 
   const { data, error } = await supabase
-    .from("products")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .limit(limit);
+    .from("product_variants")
+    .select("product_id")
+    .eq("id", variantId)
+    .maybeSingle();
 
   if (error) {
-    console.log("Featured products error:", error);
-    return [];
+    console.log("Variant error:", error);
+    return null;
   }
 
-  return data ?? [];
+  return data?.product_id ?? null;
+}
+
+
+// Get latest product families
+export async function getFeaturedProducts(
+  limit = 5
+): Promise<ProductWithVariants[]> {
+
+  const families = await getAllFamilies();
+
+  return families.slice(0, limit);
 }
 
 
@@ -107,7 +159,7 @@ export async function getDistinctBrands(): Promise<string[]> {
 
   const brands = data?.map((product) => product.brand).filter(Boolean) ?? [];
 
-  return [...new Set(brands)] as string[];
+  return [...new Set(brands)].sort() as string[];
 }
 
 

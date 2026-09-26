@@ -20,7 +20,7 @@ export function ProductRowActions({ id, archived }: { id: string; archived: bool
         type="button"
         disabled={pending}
         onClick={() => {
-          if (confirm("Permanently delete this product? This cannot be undone.")) {
+          if (confirm("Permanently delete this product and ALL its variants? This cannot be undone.")) {
             startTransition(() => deleteProduct(id));
           }
         }}

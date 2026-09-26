@@ -9,18 +9,21 @@ const LOW_STOCK_THRESHOLD = 3;
 export default async function AdminDashboard() {
   const { data: products, error } = await supabaseAdmin
     .from("products")
-    .select("quantity, is_archived, updated_at");
+    .select("is_archived, product_variants(quantity, updated_at, enrichment_status)");
 
   if (error) {
     return <p className="text-sm text-red-600">Failed to load dashboard: {error.message}</p>;
   }
 
-  // Step through every non-archived product once and build up the stats we
-  // want to show, instead of chaining several filter/reduce calls together.
+  // Step through every non-archived product family and its variants once and
+  // build up the stats we want to show, instead of chaining several
+  // filter/reduce calls together. Stock is counted per variant (per exact model).
   let totalProducts = 0;
+  let totalVariants = 0;
   let totalUnits = 0;
   let lowStock = 0;
   let outOfStock = 0;
+  let needsReview = 0;
   let lastUpdated: string | null = null;
 
   for (const product of products ?? []) {
@@ -30,24 +33,34 @@ export default async function AdminDashboard() {
     }
 
     totalProducts++;
-    totalUnits = totalUnits + product.quantity;
 
-    if (product.quantity === 0) {
-      outOfStock++;
-    } else if (product.quantity <= LOW_STOCK_THRESHOLD) {
-      lowStock++;
-    }
+    for (const variant of product.product_variants) {
+      totalVariants++;
+      totalUnits = totalUnits + variant.quantity;
 
-    if (lastUpdated === null || product.updated_at > lastUpdated) {
-      lastUpdated = product.updated_at;
+      if (variant.quantity === 0) {
+        outOfStock++;
+      } else if (variant.quantity <= LOW_STOCK_THRESHOLD) {
+        lowStock++;
+      }
+
+      if (variant.enrichment_status === "needs_review") {
+        needsReview++;
+      }
+
+      if (lastUpdated === null || variant.updated_at > lastUpdated) {
+        lastUpdated = variant.updated_at;
+      }
     }
   }
 
   const cards = [
     { label: "Active Products", value: totalProducts },
+    { label: "Variants (exact models)", value: totalVariants },
     { label: "Total Units in Stock", value: totalUnits },
-    { label: "Low Stock (≤ 3)", value: lowStock },
-    { label: "Out of Stock", value: outOfStock },
+    { label: "Low Stock Variants (≤ 3)", value: lowStock },
+    { label: "Out of Stock Variants", value: outOfStock },
+    { label: "Variants Needing Review", value: needsReview },
   ];
 
   return (
@@ -57,7 +70,7 @@ export default async function AdminDashboard() {
         {lastUpdated ? `Last stock update: ${new Date(lastUpdated).toLocaleString()}` : "No products yet."}
       </p>
 
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
         {cards.map((c) => (
           <div key={c.label} className="rounded-lg border border-border bg-white p-5">
             <div className="text-2xl font-bold text-navy">{c.value}</div>

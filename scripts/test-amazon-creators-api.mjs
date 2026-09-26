@@ -49,7 +49,8 @@ async function getOneProductFromSupabase() {
 
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const { data, error } = await supabase.from("products").select("model_number, name").limit(1);
+  // Model numbers live on product_variants; the name on the family (products).
+  const { data, error } = await supabase.from("product_variants").select("model_number:sku, products(name)").limit(1);
 
   if (error) {
     throw new Error("Could not read a product from Supabase: " + error.message);
@@ -59,7 +60,8 @@ async function getOneProductFromSupabase() {
     throw new Error("No products found in Supabase. Add at least one product first.");
   }
 
-  return data[0];
+  // Flatten to { model_number, name } like before.
+  return { model_number: data[0].model_number, name: data[0].products.name };
 }
 
 // Step 2: Set up the Amazon Creators API client using our credentials.

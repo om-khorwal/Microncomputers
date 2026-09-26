@@ -8,7 +8,7 @@ export default function NewProductPage() {
     <div>
       <h1 className="text-xl font-bold text-navy">Add Product</h1>
       <div className="mt-6">
-        <ProductForm action={createProduct} submitLabel="Create Product" />
+        <ProductForm action={createProduct} submitLabel="Create Product" withFirstVariant />
       </div>
     </div>
   );

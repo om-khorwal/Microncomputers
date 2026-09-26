@@ -43,13 +43,14 @@ async function getOneProductFromSupabase() {
 
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  let query = supabase.from("products").select("model_number, name, brand");
+  // Model numbers live on product_variants; the name and brand on the family (products).
+  let query = supabase.from("product_variants").select("model_number:sku, products(name, brand)");
 
   // process.argv[2] is the first thing typed after the script name.
   const modelNumberFromCommandLine = process.argv[2];
 
   if (modelNumberFromCommandLine) {
-    query = query.eq("model_number", modelNumberFromCommandLine);
+    query = query.eq("sku_key", modelNumberFromCommandLine.trim().toUpperCase());
   }
 
   query = query.limit(1);
@@ -64,7 +65,8 @@ async function getOneProductFromSupabase() {
     throw new Error("No matching product found in Supabase.");
   }
 
-  return data[0];
+  // Flatten to { model_number, name, brand } like before.
+  return { model_number: data[0].model_number, name: data[0].products.name, brand: data[0].products.brand };
 }
 
 // Step 2: Write the instructions we send to Gemini.

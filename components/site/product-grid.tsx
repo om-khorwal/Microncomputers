@@ -1,7 +1,7 @@
 import { ProductCard } from "@/components/site/product-card";
-import type { Product } from "@/lib/types";
+import type { ProductWithVariants } from "@/lib/types";
 
-export function ProductGrid({ products, emptyMessage = "No products found." }: { products: Product[]; emptyMessage?: string }) {
+export function ProductGrid({ products, emptyMessage = "No products found." }: { products: ProductWithVariants[]; emptyMessage?: string }) {
   if (products.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border py-16 text-center text-sm text-muted">

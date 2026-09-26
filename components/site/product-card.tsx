@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatPrice, headlineSpecs } from "@/lib/format";
-import type { Product } from "@/lib/types";
+import type { ProductWithVariants } from "@/lib/types";
+import { summarizeFamily, variantHeadline } from "@/lib/variants";
 
 function PlaceholderThumb() {
   return (
@@ -13,20 +14,34 @@ function PlaceholderThumb() {
   );
 }
 
-export function ProductCard({ product }: { product: Product }) {
-  const specs = headlineSpecs(product.specifications);
-  const inStock = product.quantity > 0;
+// One card per product family. If the family has several variants, the card
+// shows the lowest price ("From ₹…") and how many configurations there are.
+export function ProductCard({ product }: { product: ProductWithVariants }) {
+  const summary = summarizeFamily(product);
+  const defaultVariant = summary.defaultVariant;
+  const inStock = summary.inStock;
+  const hasSeveralPrices = summary.lowestPrice !== summary.highestPrice;
+
+  // Spec line: the default variant's processor / RAM / storage, or its other specs.
+  let specs = variantHeadline(defaultVariant);
+
+  if (specs.length === 0) {
+    specs = headlineSpecs(defaultVariant.specifications);
+  }
+
+  // Use the variant's own photo, otherwise the family photo.
+  const imageUrl = defaultVariant.image_url ?? product.image_url;
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-white transition hover:shadow-md">
       <Link href={`/products/${product.id}`} className="relative block aspect-[4/3] w-full overflow-hidden">
-        {product.image_url ? (
+        {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- image_url can be any external host (sheet/admin supplied), so next/image's remotePatterns allowlist doesn't fit here.
           <img
-            src={product.image_url}
+            src={imageUrl}
             alt={product.name}
             loading="lazy"
-            className="h-full w-full object-cover transition group-hover:scale-105"
+            className="h-full w-full bg-white object-contain p-3 transition group-hover:scale-105"
           />
         ) : (
           <PlaceholderThumb />
@@ -40,7 +55,7 @@ export function ProductCard({ product }: { product: Product }) {
 
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
-          {product.model_number}
+          {summary.variantCount > 1 ? `${summary.variantCount} configurations` : defaultVariant.sku}
         </span>
         <Link href={`/products/${product.id}`} className="line-clamp-2 text-sm font-semibold text-navy hover:text-accent">
           {product.name}
@@ -51,9 +66,12 @@ export function ProductCard({ product }: { product: Product }) {
         )}
 
         <div className="mt-auto pt-3">
-          <div className="text-base font-bold text-navy">{formatPrice(product.price)}</div>
+          <div className="text-base font-bold text-navy">
+            {hasSeveralPrices && <span className="text-xs font-medium text-muted">From </span>}
+            {formatPrice(summary.lowestPrice)}
+          </div>
           <div className={`text-xs ${inStock ? "text-muted" : "text-red-600"}`}>
-            {inStock ? `${product.quantity} in stock` : "Out of stock"}
+            {inStock ? `${summary.totalQuantity} in stock` : "Out of stock"}
           </div>
 
           {/* Cart and checkout aren't built yet, so these buttons are disabled placeholders. */}

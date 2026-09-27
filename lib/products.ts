@@ -2,6 +2,12 @@ import { supabase } from "@/lib/supabase/supabase";
 import type { ProductWithVariants } from "@/lib/types";
 import { latestStockUpdate } from "@/lib/variants";
 
+// The customer site only shows variants whose details were verified by the
+// enrichment script. Variants that still need review (or were never enriched)
+// stay in Supabase and in the admin panel, but customers don't see them.
+// A family with no visible variant is hidden too.
+const STOREFRONT_STATUS = "enriched";
+
 export type ProductFilters = {
   q?: string;
   category?: string;
@@ -21,14 +27,15 @@ async function getAllFamilies(): Promise<ProductWithVariants[]> {
   const { data, error } = await supabase
     .from("products")
     .select("*, product_variants(*)")
-    .eq("is_archived", false);
+    .eq("is_archived", false)
+    .eq("product_variants.enrichment_status", STOREFRONT_STATUS);
 
   if (error) {
     console.log("Products error:", error);
     return [];
   }
 
-  // A family with no variants has nothing to sell yet, so we hide it.
+  // A family with no (visible) variants has nothing to sell, so we hide it.
   const families = (data ?? []).filter(
     (family) => family.product_variants.length > 0
   ) as ProductWithVariants[];
@@ -97,6 +104,7 @@ export async function getProductById(
     .from("products")
     .select("*, product_variants(*)")
     .eq("id", id)
+    .eq("product_variants.enrichment_status", STOREFRONT_STATUS)
     .maybeSingle();
 
   if (error) {
@@ -122,6 +130,7 @@ export async function getFamilyIdForVariant(
     .from("product_variants")
     .select("product_id")
     .eq("id", variantId)
+    .eq("enrichment_status", STOREFRONT_STATUS)
     .maybeSingle();
 
   if (error) {
@@ -144,40 +153,23 @@ export async function getFeaturedProducts(
 }
 
 
-// Get all unique brands
+// Get all unique brands (of the families customers can see)
 export async function getDistinctBrands(): Promise<string[]> {
 
-  const { data, error } = await supabase
-    .from("products")
-    .select("brand")
-    .not("brand", "is", null);
+  const families = await getAllFamilies();
 
-  if (error) {
-    console.log("Brands error:", error);
-    return [];
-  }
-
-  const brands = data?.map((product) => product.brand).filter(Boolean) ?? [];
+  const brands = families.map((family) => family.brand).filter(Boolean);
 
   return [...new Set(brands)].sort() as string[];
 }
 
 
-// Get all unique categories
+// Get all unique categories (of the families customers can see)
 export async function getActiveCategories(): Promise<string[]> {
 
-  const { data, error } = await supabase
-    .from("products")
-    .select("category")
-    .not("category", "is", null);
+  const families = await getAllFamilies();
 
-  if (error) {
-    console.log("Categories error:", error);
-    return [];
-  }
-
-  const categories =
-    data?.map((product) => product.category).filter(Boolean) ?? [];
+  const categories = families.map((family) => family.category).filter(Boolean);
 
   return [...new Set(categories)] as string[];
 }

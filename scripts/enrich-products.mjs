@@ -76,6 +76,14 @@
 //   ... scripts/enrich-products.mjs --limit=3                → the first 3 variants
 //   ... scripts/enrich-products.mjs --pending --limit=5      → 5 variants that were never
 //                                                              enriched or need a retry
+//   ... scripts/enrich-products.mjs --images-only 15-fa2689TX → photo search ONLY, from the
+//                                                              pages saved by the earlier
+//                                                              enrichment (see imagesOnlyPass)
+//   ... --images-only --official-only 15-fa2689TX            → same, but searching ONLY the
+//                                                              manufacturer's own website
+//   ... scripts/enrich-products.mjs --amazon-only --limit=60 → Amazon India lookup ONLY, for
+//                                                              enriched/reviewed variants that
+//                                                              never had one (see amazonOnlyPass)
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -91,8 +99,10 @@ const tavilyUrl = "https://api.tavily.com/search";
 const tavilyExtractUrl = "https://api.tavily.com/extract";
 
 // How many matched product pages to read images from (Tavily charges
-// 1 credit for every 5 pages, so 3 pages costs 1 credit).
-const maxPagesForImages = 3;
+// 1 credit for every 5 pages, so 6 pages costs 2 credits). Big shops often
+// don't name their image files after the model number, so reading a few more
+// pages finds sites that do.
+const maxPagesForImages = 6;
 
 // The most images to keep for one product.
 const maxImagesPerProduct = 6;
@@ -223,9 +233,18 @@ function readCommandLine() {
   let limit = 1;
   let save = false;
   let pendingOnly = false;
+  let amazonOnly = false;
+  let imagesOnly = false;
+  let officialOnly = false;
 
   for (const word of typedWords) {
-    if (word === "--save") {
+    if (word === "--amazon-only") {
+      amazonOnly = true;
+    } else if (word === "--images-only") {
+      imagesOnly = true;
+    } else if (word === "--official-only") {
+      officialOnly = true;
+    } else if (word === "--save") {
       save = true;
     } else if (word === "--pending") {
       pendingOnly = true;
@@ -236,7 +255,7 @@ function readCommandLine() {
     }
   }
 
-  return { modelNumbers, limit, save, pendingOnly };
+  return { modelNumbers, limit, save, pendingOnly, amazonOnly, imagesOnly, officialOnly };
 }
 
 // Reads the variants to enrich, each with its family ("product") attached:
@@ -255,6 +274,12 @@ async function getVariantsFromSupabase(supabase, commandLine) {
   } else {
     if (commandLine.pendingOnly) {
       query = query.or("enrichment_status.is.null,enrichment_status.eq.retry_later");
+    }
+
+    // Already enriched or reviewed, but never looked up on Amazon. ("->>" reads
+    // the value as text, so both a missing "amazon" and "amazon": null count.)
+    if (commandLine.amazonOnly) {
+      query = query.not("enrichment", "is", null).is("enrichment->>amazon", null);
     }
 
     query = query.limit(commandLine.limit);
@@ -746,14 +771,60 @@ async function getImagesFromPages(pageUrls) {
 //     page's link (see getProductIdsFromPageUrl)
 //   - it is not a thumbnail, icon, logo, or from a weak source
 //   - it really loads as an image
-async function collectProductImages(sku, goodResults) {
+// The model code inside a model number: its first part with letters AND
+// digits, at least 5 characters. Manufacturers name gallery photos after it.
+// Examples: "M1607KA-MB109WS" → "m1607ka", "NP940XGK-KG2IN" → "np940xgk",
+// "14-gr0002TU" → "gr0002tu". Returns null if there is no such part.
+function modelCodeOf(sku) {
+  const parts = String(sku).toLowerCase().split(/[^a-z0-9]+/);
+
+  for (const part of parts) {
+    if (part.length >= 5 && /[a-z]/.test(part) && /\d/.test(part)) {
+      return part;
+    }
+  }
+
+  return null;
+}
+
+// True if the image file is named after a DIFFERENT full model number with the
+// same model code, e.g. "x1607ca-mb139ws.jpg" on the page for X1607CA-MB142WS.
+function namesAnotherModel(imagePath, sku, modelCode) {
+  const ourParts = String(sku).toLowerCase().split(/[^a-z0-9]+/);
+  const match = imagePath.match(new RegExp(modelCode + "[-_ ]?([a-z0-9]+)"));
+
+  if (!match) {
+    return false;
+  }
+
+  const nextPart = match[1];
+  const looksLikeModelSuffix = nextPart.length >= 5 && /[a-z]/.test(nextPart) && /\d/.test(nextPart);
+
+  return looksLikeModelSuffix && !ourParts.includes(nextPart);
+}
+
+// brand: used to recognise the manufacturer's own website, whose pages are
+// read first and may give gallery photos named after the model code.
+async function collectProductImages(sku, goodResults, brand) {
   const productPages = [];
 
   for (const result of goodResults) {
-    if (isSingleProductPage(result.url, sku)) {
+    // New-stock pages only: skip refurbished / renewed / used listings.
+    const isRefurbishedPage = unwantedAmazonWords.some((word) => result.url.toLowerCase().includes(word));
+
+    // A single-product page: the exact model number in its link - or, on the
+    // manufacturer's own website only, in its title (e.g. an ASUS store page
+    // ".../catalog/product/view/id/10587" titled "... FA566NCR-HN254WS").
+    const isComparison = result.url.includes("-vs-") || result.url.includes("compare");
+    const isOfficialProductPage = isManufacturerPage(result.url, brand) && textHasExactSku(result.title || "", sku) && !isComparison;
+
+    if ((isSingleProductPage(result.url, sku) || isOfficialProductPage) && !isRefurbishedPage && !productPages.includes(result.url)) {
       productPages.push(result.url);
     }
   }
+
+  // The manufacturer's own pages first, then the other shops (in their order).
+  productPages.sort((first, second) => Number(isManufacturerPage(second, brand)) - Number(isManufacturerPage(first, brand)));
 
   const pagesToRead = productPages.slice(0, maxPagesForImages);
   const images = [];
@@ -764,10 +835,15 @@ async function collectProductImages(sku, goodResults) {
   }
 
   const simpleModelNumber = simplifyText(sku);
+  const modelCode = modelCodeOf(sku);
   const extractedPages = await getImagesFromPages(pagesToRead);
+
+  // Keep the reading order above (manufacturer first).
+  extractedPages.sort((first, second) => pagesToRead.indexOf(first.url) - pagesToRead.indexOf(second.url));
 
   for (const page of extractedPages) {
     const productIds = getProductIdsFromPageUrl(page.url);
+    const isManufacturer = isManufacturerPage(page.url, brand);
 
     for (const image of page.images || []) {
       // Tavily can send images as plain strings or as { url, description }.
@@ -786,15 +862,23 @@ async function collectProductImages(sku, goodResults) {
         continue;
       }
 
-      // Does the image link point to this exact model?
+      // Does the image point to this exact model? Only the image's own path and
+      // file name count - never the part after "?" (tracking pixels often carry
+      // the page address, and so the model number, in their query string).
+      const imagePath = imageUrl.split("?")[0].toLowerCase();
       let matchedBy = null;
 
-      if (simplifyText(imageUrl).includes(simpleModelNumber)) {
-        matchedBy = "image link contains the model number";
+      if (simplifyText(imagePath).includes(simpleModelNumber)) {
+        matchedBy = "image file name contains the model number";
+      } else if (isManufacturer && modelCode && imagePath.includes(modelCode) && !namesAnotherModel(imagePath, sku, modelCode)) {
+        // The brand's own page for this exact model number, and the photo is
+        // named after its model code (e.g. in.store.asus.com …/m1607ka_qt_blu_1_.png).
+        matchedBy = "manufacturer's own page for this exact model, photo named after model code " + modelCode;
       } else {
         for (const productId of productIds) {
-          if (imageUrl.includes(productId)) {
-            matchedBy = "image link contains the page's product number " + productId;
+          // The page's product number as a WHOLE number: 239245_1.jpg yes, 23801715.jpg no.
+          if (new RegExp("(^|\\D)" + productId + "(\\D|$)").test(imagePath)) {
+            matchedBy = "image file name contains the page's product number " + productId;
           }
         }
       }
@@ -905,7 +989,18 @@ async function callScrapeDo(endpoint, params, sku) {
         signal: AbortSignal.timeout(60000),
       });
     } catch (error) {
-      logEntry.result = "network error / timeout: " + (error.message || error);
+      const message = String(error.message || error);
+
+      // The connection dropped before the request reached Scrape.do: try once
+      // more. A timeout is NOT retried - Scrape.do may still finish (and
+      // charge for) that request.
+      if (attempt === 1 && message.includes("fetch failed")) {
+        console.log("  Scrape.do " + endpoint + ": connection failed, waiting 5 seconds and trying once more...");
+        await wait(5);
+        continue;
+      }
+
+      logEntry.result = "network error / timeout: " + message;
       console.log("  Scrape.do " + endpoint + ": " + logEntry.result);
       return null;
     }
@@ -2402,7 +2497,7 @@ async function enrichOneVariant(variant, sheetName) {
   }
 
   console.log("Step 6: Collecting images from the matched product pages...");
-  const { images: pageImages, pagesRead } = await collectProductImages(variant.sku, goodResults);
+  const { images: pageImages, pagesRead } = await collectProductImages(variant.sku, goodResults, getBrand(variant));
   console.log("  Read " + pagesRead.length + " page(s), kept " + pageImages.length + " image(s).");
 
   // Images from the verified Amazon product page come after the other pages' images.
@@ -2432,11 +2527,315 @@ async function enrichOneVariant(variant, sheetName) {
   };
 }
 
+// ----------------------------------------------------------------------------
+// Amazon-only pass (--amazon-only)
+// ----------------------------------------------------------------------------
+//
+// For variants that were already enriched or reviewed but never had an Amazon
+// lookup (e.g. the per-run Scrape.do limit was reached). It runs ONLY the
+// Amazon step - no Tavily web search, no Gemini, no family step - and never
+// changes the status, configuration, specs, family, SKU, price or quantity.
+//
+// What is saved in the variant's enrichment:
+//   - verified:            enrichment.amazon (with the product data), the Amazon
+//                          price in online_prices (never in the variant's price)
+//                          and the Amazon images in enrichment.images. The
+//                          variant's own photo is filled in only if it is
+//                          "enriched" (shown to customers) and has none yet.
+//   - no match / review:   only a small enrichment.amazon record (status,
+//                          ASIN candidates, reasons) - no Amazon product data -
+//                          so the same search is not repeated for 7 days.
+function planAmazonOnly(variant, found) {
+  const enrichment = variant.enrichment;
+  let amazon = found.amazon;
+
+  // A range / model name can't have one verified listing (see rangeIdentifierReason),
+  // using what the earlier enrichment found about its family.
+  const savedDetails = {
+    family_name: enrichment.family?.latest_family_name_found ?? enrichment.family?.family_name ?? null,
+    single_configuration: enrichment.single_configuration ?? null,
+  };
+  const rangeReason = rangeIdentifierReason(variant, savedDetails);
+
+  if (amazon?.match_status === "verified" && rangeReason) {
+    amazon = { ...amazon, match_status: "needs_review", reasons: [...(amazon.reasons || []), rangeReason] };
+  }
+
+  const isVerified = amazon?.match_status === "verified";
+
+  if (!amazon) {
+    return { amazon: null, fields: null, summary: ["Amazon: nothing saved (request failed or no token)"] };
+  }
+
+  // Not verified: keep only the small status record, no Amazon product data.
+  if (!isVerified) {
+    amazon = {
+      match_status: amazon.match_status,
+      asin: amazon.asin ?? null,
+      asin_source: amazon.asin_source ?? null,
+      candidates: amazon.candidates ?? [],
+      reasons: amazon.reasons ?? [],
+      checked_at: amazon.checked_at,
+      data_source: "scrape.do",
+    };
+  }
+
+  const newEnrichment = { ...enrichment, amazon };
+  const summary = ["Amazon: " + amazon.match_status + (amazon.asin ? " | ASIN " + amazon.asin : "")];
+  const fields = {};
+
+  if (isVerified) {
+    // Amazon's price joins the other online prices (it replaces an older Amazon entry).
+    if (found.price) {
+      newEnrichment.online_prices = [
+        found.price,
+        ...(enrichment.online_prices || []).filter((price) => !isAmazonIndiaUrl(price.product_url) && simplifyText(price.store_name) !== "amazon"),
+      ];
+      summary.push("Amazon price added: ₹" + found.price.price_inr + (found.price.list_price_inr ? " (MRP ₹" + found.price.list_price_inr + ")" : ""));
+    }
+
+    // Amazon images join the evidence images (no duplicates).
+    const knownUrls = new Set((enrichment.images || []).map((image) => image.url));
+    const newImages = found.images.filter((image) => !knownUrls.has(image.url));
+    newEnrichment.images = [...(enrichment.images || []), ...newImages];
+    summary.push("Amazon images added: " + newImages.length);
+
+    // The variant's own photo: only if customers can see it and it has none.
+    if (variant.enrichment_status === "enriched" && isEmptyValue(variant.image_url) && found.images.length > 0) {
+      fields.image_url = found.images[0].url;
+      summary.push("variant photo: (empty) → Amazon image");
+    }
+  }
+
+  fields.enrichment = newEnrichment;
+  // enriched_at changes, so the database keeps updated_at (enrichment-only save).
+  fields.enriched_at = new Date().toISOString();
+
+  return { amazon, fields: keepAllowedColumns(fields, ["image_url", "enrichment", "enriched_at"]), summary };
+}
+
+async function amazonOnlyPass(supabase, commandLine) {
+  console.log("AMAZON-ONLY PASS (" + (commandLine.save ? "SAVE" : "DRY RUN") + ") - Scrape.do limit this run: " + maxScrapeDoRequestsPerRun + " requests.");
+  const variants = await getVariantsFromSupabase(supabase, commandLine);
+  console.log("  " + variants.length + " variant(s) without an Amazon lookup.");
+
+  const results = [];
+
+  for (const variant of variants) {
+    if (results.length > 0) {
+      await wait(secondsBetweenProducts);
+    }
+
+    console.log("");
+    console.log("=== " + variant.sku + " (" + variant.product.name + ") [" + variant.enrichment_status + "] ===");
+
+    let found = { amazon: null, page: null, images: [], price: null };
+
+    try {
+      found = await lookUpAmazon(variant, []);
+    } catch (error) {
+      console.log("  Amazon step failed: " + (error.message || error));
+    }
+
+    const plan = planAmazonOnly(variant, found);
+
+    for (const line of plan.summary) {
+      console.log("  - " + line);
+    }
+
+    let saved = false;
+
+    if (commandLine.save && plan.fields) {
+      // If the connection drops while saving, wait and try once more.
+      for (let attempt = 1; attempt <= 2 && !saved; attempt++) {
+        const { error } = await supabase.from("product_variants").update(plan.fields).eq("id", variant.id);
+
+        if (!error) {
+          saved = true;
+          console.log("  Saved to Supabase.");
+        } else if (attempt === 1) {
+          console.log("  Save failed (" + error.message + "), waiting 5 seconds and trying once more...");
+          await wait(5);
+        } else {
+          console.log("  NOT saved: " + error.message);
+        }
+      }
+    }
+
+    results.push({
+      sku: variant.sku,
+      status: variant.enrichment_status,
+      amazon: plan.amazon?.match_status ?? "not saved",
+      asin: plan.amazon?.asin ?? null,
+      price: found.price && plan.amazon?.match_status === "verified" ? found.price.price_inr : null,
+      images: plan.amazon?.match_status === "verified" ? found.images.length : 0,
+      photo_set: Boolean(plan.fields?.image_url),
+      saved,
+    });
+  }
+
+  console.log("");
+  console.log("--- AMAZON-ONLY SUMMARY ---");
+
+  for (const r of results) {
+    console.log(r.sku.padEnd(26) + " " + r.amazon.padEnd(13) + " " + (r.asin ?? "-").padEnd(11) + " " + (r.price ? "₹" + r.price : "-").padEnd(10) + " images " + String(r.images).padEnd(3) + (r.photo_set ? " photo set" : "") + (r.saved ? "" : " (not saved)"));
+  }
+
+  const count = (status) => results.filter((r) => r.amazon === status).length;
+  console.log("");
+  console.log("TOTALS: " + JSON.stringify({ variants: results.length, verified: count("verified"), needs_review: count("needs_review"), no_result: count("no_result"), not_saved: count("not saved"), prices_added: results.filter((r) => r.price).length, images_added: results.reduce((sum, r) => sum + r.images, 0), photos_set: results.filter((r) => r.photo_set).length }));
+
+  let creditsUsed = 0;
+  console.log("");
+  console.log("--- SCRAPE.DO REQUESTS ---");
+
+  for (const entry of scrapeDoLog) {
+    if (entry.result === "success (1 credit)") {
+      creditsUsed = creditsUsed + 1;
+    }
+
+    console.log(entry.endpoint.padEnd(7) + " " + entry.sku.padEnd(26) + " " + JSON.stringify(entry.params) + " → " + entry.result);
+  }
+
+  console.log("Requests: " + scrapeDoLog.length + " | successful (credits used): " + creditsUsed);
+}
+
+// ----------------------------------------------------------------------------
+// Images-only pass (--images-only)
+// ----------------------------------------------------------------------------
+//
+// Looks for photos again for variants given by model number, using ONLY the
+// product pages the earlier enrichment already verified for that exact model
+// (enrichment.source_urls) - no new search, no Gemini, no Amazon.
+// Saves only verified images: they are added to enrichment.images, and the
+// variant's photo is filled in if it is shown to customers and has none.
+// Nothing else is changed.
+// The manufacturer's own websites, by brand (sub-domains included, e.g.
+// asus.com also covers in.store.asus.com).
+const officialDomains = {
+  asus: ["asus.com"],
+  msi: ["msi.com"],
+  hp: ["hp.com"],
+  lenovo: ["lenovo.com"],
+  samsung: ["samsung.com"],
+  dell: ["dell.com"],
+  acer: ["acer.com"],
+  apple: ["apple.com"],
+  infinix: ["infinixmobility.com"],
+};
+
+// Searches ONLY the manufacturer's website (Tavily) for this exact model and
+// keeps the pages that pass the usual check (exact model number in the page
+// link or title, not a weak source).
+async function findOfficialPages(variant) {
+  const domains = officialDomains[simplifyText(getBrand(variant))];
+
+  if (!domains) {
+    console.log("  No official website known for brand \"" + getBrand(variant) + "\".");
+    return [];
+  }
+
+  const searchText = getBrand(variant) + " " + variant.sku;
+  const response = await searchWithTavily(searchText, domains);
+  const { goodResults } = keepGoodResults(response.results || [], variant.sku);
+
+  console.log("  Official search \"" + searchText + "\" on " + domains.join(", ") + ": " + (response.results || []).length + " page(s), " + goodResults.length + " with the exact model number in link/title.");
+
+  for (const result of response.results || []) {
+    const kept = goodResults.includes(result);
+    console.log("    " + (kept ? "✓ " : "✗ ") + result.url);
+  }
+
+  return goodResults;
+}
+
+async function imagesOnlyPass(supabase, commandLine) {
+  console.log("IMAGES-ONLY PASS (" + (commandLine.save ? "SAVE" : "DRY RUN") + ") - reading up to " + maxPagesForImages + " verified pages per model, manufacturer first.");
+  const variants = await getVariantsFromSupabase(supabase, commandLine);
+  const results = [];
+
+  for (const variant of variants) {
+    console.log("");
+    console.log("=== " + variant.sku + " (" + variant.product.name + ") [" + variant.enrichment_status + "] ===");
+
+    let pages = (variant.enrichment?.source_urls || []).map((url) => ({ url }));
+
+    // --official-only: use only pages from the manufacturer's own website.
+    if (commandLine.officialOnly) {
+      try {
+        pages = await findOfficialPages(variant);
+      } catch (error) {
+        console.log("  Official search failed: " + (error.message || error));
+        pages = [];
+      }
+    }
+
+    let images = [];
+
+    try {
+      const collected = await collectProductImages(variant.sku, pages, getBrand(variant));
+      images = collected.images;
+      console.log("  Read " + collected.pagesRead.length + " page(s): " + collected.pagesRead.map((url) => new URL(url).hostname.replace(/^www\./, "")).join(", "));
+      console.log("  Rejected: " + JSON.stringify(collected.rejectedCount));
+    } catch (error) {
+      console.log("  Image step failed: " + (error.message || error));
+    }
+
+    for (const image of images) {
+      console.log("  ✓ " + image.url + "\n      from " + new URL(image.from_page).hostname + " - " + image.matched_by);
+    }
+
+    const fields = {};
+
+    if (images.length > 0) {
+      const knownUrls = new Set((variant.enrichment.images || []).map((image) => image.url));
+      fields.enrichment = { ...variant.enrichment, images: [...(variant.enrichment.images || []), ...images.filter((image) => !knownUrls.has(image.url))] };
+
+      if (variant.enrichment_status === "enriched" && isEmptyValue(variant.image_url)) {
+        fields.image_url = images[0].url;
+      }
+
+      // enriched_at changes, so the database keeps updated_at (enrichment-only save).
+      fields.enriched_at = new Date().toISOString();
+    }
+
+    let saved = false;
+
+    if (commandLine.save && Object.keys(fields).length > 0) {
+      const { error } = await supabase.from("product_variants").update(keepAllowedColumns(fields, ["image_url", "enrichment", "enriched_at"])).eq("id", variant.id);
+      saved = !error;
+      console.log(error ? "  NOT saved: " + error.message : "  Saved to Supabase.");
+    }
+
+    results.push({ sku: variant.sku, images: images.length, photo: fields.image_url ?? null, source: images[0] ? new URL(images[0].from_page).hostname : null, saved });
+  }
+
+  console.log("");
+  console.log("--- IMAGES-ONLY SUMMARY ---");
+
+  for (const r of results) {
+    console.log(r.sku.padEnd(26) + (r.photo ? "PHOTO SET from " + r.source : "still no photo").padEnd(40) + " verified images: " + r.images + (r.saved ? "" : " (not saved)"));
+  }
+
+  console.log("");
+  console.log("TOTALS: " + JSON.stringify({ variants: results.length, got_photo: results.filter((r) => r.photo).length, still_without: results.filter((r) => !r.photo).length }));
+}
+
 // Runs all variants one after another, prints what would change, and saves
 // it only if --save was typed.
 async function main() {
   const commandLine = readCommandLine();
   const supabase = connectToSupabase();
+
+  if (commandLine.amazonOnly) {
+    await amazonOnlyPass(supabase, commandLine);
+    return;
+  }
+
+  if (commandLine.imagesOnly) {
+    await imagesOnlyPass(supabase, commandLine);
+    return;
+  }
 
   if (commandLine.save) {
     console.log("MODE: SAVE - results will be written to Supabase.");

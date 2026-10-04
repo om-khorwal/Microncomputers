@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireEnv } from "@/lib/supabase/env";
 
 /**
  * Public client — anon key only. RLS restricts this to reading
@@ -6,8 +7,8 @@ import { createClient } from "@supabase/supabase-js";
  * if ever needed, the browser.
  */
 export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  requireEnv("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),
+  requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 );
 
 export default supabase;

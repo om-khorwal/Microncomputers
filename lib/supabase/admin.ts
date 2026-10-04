@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { requireEnv } from "@/lib/supabase/env";
 
 /**
  * Admin client — service-role key, bypasses RLS. Import ONLY from
@@ -8,8 +9,8 @@ import { createClient } from "@supabase/supabase-js";
  * fail the build instead of leaking this key to the browser.
  */
 export const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  requireEnv("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),
+  requireEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
   { auth: { persistSession: false } }
 );
 

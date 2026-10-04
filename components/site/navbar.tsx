@@ -1,126 +1,156 @@
 import Link from "next/link";
-import { CATEGORIES } from "@/lib/types";
-import { whatsappGeneralLink } from "@/lib/whatsapp";
 
-function LogoMark() {
+function MicronLogo() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M1.5 19.5h21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M9 19.5l1-3.5h4l1 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="100%" stopColor="#2457e8" />
+        </linearGradient>
+      </defs>
+      {/* Left chevron arrow */}
+      <path d="M4 7 L16 19 L4 31 L10 31 L22 19 L10 7 Z" fill="url(#logoGrad)" />
+      {/* Right chevron arrow — offset, slightly translucent */}
+      <path d="M17 7 L29 19 L17 31 L23 31 L35 19 L23 7 Z" fill="url(#logoGrad)" opacity="0.65" />
     </svg>
   );
 }
 
-export function Navbar() {
-  const whatsappLink = whatsappGeneralLink();
-
+function SearchIcon() {
   return (
-    <header className="sticky top-0 z-40 bg-white">
-      {/* Utility bar */}
-      <div className="hidden bg-navy text-xs text-white/80 sm:block">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2">
-          <span>Wholesale laptops &amp; computers — live stock, updated daily</span>
-          {whatsappLink ? (
-            <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="hover:text-white">
-              Chat with us on WhatsApp
-            </a>
-          ) : (
-            <span>Wholesale enquiries welcome</span>
-          )}
-        </div>
-      </div>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
-      {/* Main bar */}
-      <div className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3.5 sm:gap-8">
-          <Link href="/" className="flex items-center gap-2 text-navy shrink-0">
-            <LogoMark />
-            <span className="text-lg font-bold tracking-tight">Micron Computers</span>
-          </Link>
+function UserIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
-          <form action="/products" method="GET" className="hidden flex-1 md:block">
-            <div className="flex items-center rounded-md border border-border focus-within:border-accent">
-              <input
-                type="text"
-                name="q"
-                placeholder="Search by model number, name, or brand…"
-                className="w-full rounded-l-md px-4 py-2.5 text-sm outline-none placeholder:text-muted"
-              />
-              <button
-                type="submit"
-                aria-label="Search"
-                className="flex items-center justify-center rounded-r-md bg-accent px-4 py-2.5 text-white hover:bg-accent-dark"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                  <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-          </form>
+function HeartIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
-          <a
-            href={whatsappLink ?? "/products"}
-            target={whatsappLink ? "_blank" : undefined}
-            rel={whatsappLink ? "noopener noreferrer" : undefined}
-            className="ml-auto shrink-0 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-accent-dark"
-          >
-            Enquire Now
-          </a>
-        </div>
+function CartIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M16 10a4 4 0 0 1-8 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
-        <form action="/products" method="GET" className="px-6 pb-3 md:hidden">
-          <div className="flex items-center rounded-md border border-border">
-            <input
-              type="text"
-              name="q"
-              placeholder="Search products…"
-              className="w-full rounded-l-md px-4 py-2.5 text-sm outline-none placeholder:text-muted"
-            />
-            <button type="submit" className="rounded-r-md bg-accent px-4 py-2.5 text-white">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
+const NAV_LINKS = [
+  { label: "Home", href: "/" },
+  { label: "Products", href: "/products" },
+  { label: "Brands", href: "/products?brand=all" },
+  { label: "Why Micron", href: "/#why-us" },
+  { label: "Support", href: "/#support" },
+];
+
+export function Navbar() {
+  return (
+    <header className="sticky top-0 z-50 bg-white border-b border-[#e4e7ec] shadow-sm">
+      <div className="mx-auto flex max-w-7xl items-center gap-6 px-6 py-3">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 shrink-0">
+          <MicronLogo />
+          <div className="leading-none">
+            <span className="block text-[15px] font-black tracking-wider text-[#0b1530]">MICRON</span>
+            <span className="block text-[9px] font-semibold tracking-[0.2em] text-[#667085] uppercase">Computers</span>
           </div>
+        </Link>
+
+        {/* Nav links */}
+        <nav className="hidden lg:flex items-center gap-1 ml-2">
+          {NAV_LINKS.map((link, i) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`relative px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+                i === 0
+                  ? "bg-[#0b1530] text-white"
+                  : "text-[#0b1530] hover:bg-[#f0f4ff]"
+              }`}
+            >
+              {link.label}
+              {i === 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#2457e8]" />
+              )}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Search */}
+        <form action="/products" method="GET" className="hidden md:flex flex-1 items-center rounded-full border border-[#e4e7ec] bg-[#f9fafb] px-4 py-2.5 gap-2 focus-within:border-[#2457e8] focus-within:bg-white transition-colors">
+          <span className="text-[#667085]">
+            <SearchIcon />
+          </span>
+          <input
+            type="text"
+            name="q"
+            placeholder="Search laptops, desktops, accessories, brands..."
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-[#9aa5b4]"
+          />
         </form>
-      </div>
 
-      {/* Category bar */}
-      <div className="hidden bg-navy sm:block">
-        <div className="mx-auto flex max-w-7xl items-center gap-6 px-6 text-xs font-semibold uppercase tracking-wide text-white/90">
-          <div className="group relative">
-            <button className="flex items-center gap-2 border-r border-white/10 py-3 pr-6 text-white">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              Shop by Category
-            </button>
-            <div className="invisible absolute left-0 top-full z-50 w-64 rounded-b-md border border-border bg-white py-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-              {CATEGORIES.map((c) => (
-                <Link
-                  key={c}
-                  href={`/products?category=${encodeURIComponent(c)}`}
-                  className="block px-4 py-2 text-xs font-normal normal-case text-foreground hover:bg-black/5"
-                >
-                  {c}
-                </Link>
-              ))}
-            </div>
-          </div>
-          <Link href="/" className="py-3 text-white hover:text-white/70">
-            Home
-          </Link>
-          <Link href="/products" className="py-3 text-white hover:text-white/70">
-            All Products
-          </Link>
-          <Link href="/#why-us" className="py-3 text-white hover:text-white/70">
-            Why Micron
-          </Link>
+        {/* Icons */}
+        <div className="flex items-center gap-1 ml-auto shrink-0">
+          <button
+            aria-label="Account"
+            className="p-2 rounded-full text-[#667085] hover:bg-[#f0f4ff] hover:text-[#0b1530] transition-colors"
+          >
+            <UserIcon />
+          </button>
+          <button
+            aria-label="Wishlist"
+            className="p-2 rounded-full text-[#667085] hover:bg-[#f0f4ff] hover:text-[#0b1530] transition-colors"
+          >
+            <HeartIcon />
+          </button>
+          <button
+            aria-label="Cart"
+            className="relative p-2 rounded-full text-[#667085] hover:bg-[#f0f4ff] hover:text-[#0b1530] transition-colors"
+          >
+            <CartIcon />
+            <span className="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#2457e8] text-[9px] font-bold text-white">
+              3
+            </span>
+          </button>
         </div>
       </div>
+
+      {/* Mobile search */}
+      <form action="/products" method="GET" className="md:hidden px-4 pb-3">
+        <div className="flex items-center rounded-full border border-[#e4e7ec] bg-[#f9fafb] px-4 py-2.5 gap-2">
+          <span className="text-[#667085]"><SearchIcon /></span>
+          <input
+            type="text"
+            name="q"
+            placeholder="Search products..."
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-[#9aa5b4]"
+          />
+        </div>
+      </form>
     </header>
   );
 }

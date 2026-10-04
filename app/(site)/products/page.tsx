@@ -27,7 +27,7 @@ export default async function ProductsPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="w-[80%] mx-auto py-10">
       <h1 className="text-2xl font-bold tracking-tight text-navy sm:text-3xl">
         {category || "All Products"}
       </h1>

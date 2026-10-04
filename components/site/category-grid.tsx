@@ -12,7 +12,7 @@ const ICONS: Record<(typeof CATEGORIES)[number], string> = {
 
 export function CategoryGrid() {
   return (
-    <section className="mx-auto max-w-7xl px-6 py-16">
+    <section className="w-[80%] mx-auto py-16 md:py-20">
       <div className="text-center">
         <h2 className="text-2xl font-bold tracking-tight text-navy sm:text-3xl">Shop by Category</h2>
         <div className="mx-auto mt-3 h-1 w-12 rounded bg-accent" />

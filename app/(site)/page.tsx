@@ -10,7 +10,10 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const featured = await getFeaturedProducts(10);
+  const allFeatured = await getFeaturedProducts(20);
+  const featured = allFeatured
+    .filter((p) => p.image_url || p.product_variants.some((v) => v.image_url))
+    .slice(0, 10);
 
   return (
     <>
@@ -18,7 +21,7 @@ export default async function Home() {
       <CategoryGrid />
       <PromoBanner />
 
-      <section className="mx-auto max-w-7xl px-6 py-16">
+      <section className="w-[80%] mx-auto py-16">
         <div className="flex items-end justify-between">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-navy sm:text-3xl">Latest Stock</h2>

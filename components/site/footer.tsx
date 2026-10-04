@@ -52,7 +52,12 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-white/10 px-6 py-5 text-center text-xs text-white/50">
+      <div className="border-t border-white/10 px-6 pt-5 pb-2 text-center text-xs text-white/40">
+        <p className="mx-auto max-w-3xl leading-relaxed">
+          <strong className="text-white/50">Disclaimer:</strong> Product listings, pricing, and stock information on this site are for reference purposes only and may not reflect current market prices. Prices shown are approximate estimates based on local market rates and should not be relied upon as final or guaranteed. This site is a demo and data may not be fully accurate. Always confirm pricing and availability directly with us before making any purchase decision.
+        </p>
+      </div>
+      <div className="px-6 py-4 text-center text-xs text-white/50">
         © {new Date().getFullYear()} Micron Computers. All rights reserved.
       </div>
     </footer>
